@@ -48,7 +48,7 @@ jobs:
         sudo mkdir -p /opt/images/
     - name: Build Firmware
       env:
-        TNAME: MI-MINI
+        TNAME: WR1200JS
         KERNEL: 3.4
       run: |
         cd /opt/rt-n56u/trunk
