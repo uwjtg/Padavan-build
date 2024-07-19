@@ -48,7 +48,7 @@ jobs:
         sudo mkdir -p /opt/images/
     - name: Build Firmware
       env:
-        TNAME: MI-R4A
+        TNAME: MI-R3G
         KERNEL: 3.4
       run: |
         cd /opt/rt-n56u/trunk
@@ -129,5 +129,5 @@ jobs:
       uses: actions/upload-artifact@master
       if: always()
       with:
-        name: Padavan-MI-R4A
+        name: Padavan-MI-R3G
         path: /opt/images
