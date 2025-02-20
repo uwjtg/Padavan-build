@@ -1,11 +1,15 @@
 name: Build Padavan
 
-on:
+on: 
   release:
     types: [published]
   push:
     tags:
-      - 'v*'
+    - 'v*'
+  #  branches: 
+  #    - master
+#  schedule:
+#    - cron: 0 8 * * 5
   watch:
     types: [started]
 
@@ -17,7 +21,6 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@master
-
     - name: Initialization environment
       env:
         DEBIAN_FRONTEND: noninteractive
@@ -26,34 +29,29 @@ jobs:
         sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot \
         cpio git python-docutils gettext automake autopoint texinfo build-essential help2man \
         pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget
-
     - name: Clone source code
       env:
         KERNEL: 3.4
       run: |
-        # 创建目录并设置安全权限
-        sudo mkdir -p /opt/rt-n56u /opt/images
-        sudo chmod 755 /opt/rt-n56u /opt/images
-
-        # 克隆仓库
-        if [ "$KERNEL" = "4.4" ]; then
-          echo "Cloning padavan-4.4 repository..."
-          git clone --depth=1 https://github.com/MeIsReallyBa/padavan-4.4.git /opt/rt-n56u || { echo "Clone failed"; exit 1; }
+        sudo chmod -R 777 /opt
+        if [ $KERNEL = "4.4" ] ; then
+        git clone --depth=1 https://github.com/MeIsReallyBa/padavan-4.4.git /opt/rt-n56u
         else
-          echo "Cloning default padavan repository..."
-          git clone --depth=1 https://e.coding.net/hanwckf/rt-n56u/padavan.git /opt/rt-n56u || { echo "Clone failed"; exit 1; }
+        #git clone --depth=1 https://github.com/chongshengB/rt-n56u.git /opt/rt-n56u
+        git clone --depth=1 https://e.coding.net/hanwckf/rt-n56u/padavan.git /opt/rt-n56u
         fi
 
-        # 下载二进制文件到固件目录
-        echo "Downloading vnt-cli..."
-        sudo mkdir -p /opt/rt-n56u/trunk/user/custom/etc/storage
-        wget https://github.com/uwjtg/Padavan-build/raw/master/.github/vnt-cli -O /opt/rt-n56u/trunk/user/custom/etc/storage/vnt-cli || { echo "Download failed"; exit 1; }
-        sudo chmod 777 /opt/rt-n56u/trunk/user/custom/etc/storage/vnt-cli
+        # ================== 新增：下载二进制文件 ================== <-- 新增
+        cd /opt/rt-n56u/trunk
+        sudo mkdir -p user/custom/etc/storage
+        wget https://github.com/uwjtg/Padavan-build/raw/master/.github/vnt-cli -O user/custom/etc/storage/vnt-cli  # <-- 新增
+        sudo chmod 777 user/custom/etc/storage/vnt-cli  # <-- 新增
 
-        # 下载工具链
-        cd /opt/rt-n56u/toolchain-mipsel || { echo "Toolchain directory missing"; exit 1; }
-        sudo sh dl_toolchain.sh || { echo "Toolchain setup failed"; exit 1; }
-
+        cd /opt/rt-n56u/toolchain-mipsel
+        sudo sh dl_toolchain.sh
+        #sudo ./clean_toolchain
+        #sudo ./build_toolchain
+        sudo mkdir -p /opt/images/
     - name: Build Firmware
       env:
         TNAME: WR1200JS
@@ -61,41 +59,84 @@ jobs:
       run: |
         cd /opt/rt-n56u/trunk
 
-        # 复制自定义文件到固件系统
-        echo "Copying custom files..."
+        # ================== 新增：复制文件到固件系统 ================== <-- 新增
         sudo mkdir -p etc/storage
-        sudo cp -rf user/custom/etc/storage/* etc/storage/
+        sudo cp -f user/custom/etc/storage/vnt-cli etc/storage/  # <-- 新增
 
-        # 检查配置文件是否存在
-        if [ ! -f configs/templates/$TNAME.config ]; then
-          echo "Error: configs/templates/$TNAME.config not found"
-          exit 1
+        if [ ! -f configs/templates/$TNAME.config ] ; then
+        sudo echo "configs/templates/$TNAME.config not found "
+        exit 1
         fi
-
-        # 应用配置
         sudo cp -f configs/templates/$TNAME.config .config
         sudo sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' .config
-
-        # 清理旧配置项
-        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_MENTOHUST/d' .config
-        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT/d' .config
-        # ...（其他清理命令保持不变）
-
-        # 写入新配置
-        if [ "$KERNEL" = "4.4" ]; then
-          echo "CONFIG_FIRMWARE_INCLUDE_MENTOHUST=n" >> .config
-          # ...（其他4.4内核配置保持不变）
+        ################################################################################################
+        #因不同型号配置功能不一样，所以先把配置项删除，如果你自己要添加其他的，也要写上删除这一条，切记！！！
+        ################################################################################################
+        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_MENTOHUST/d' .config #删除配置项MENTOHUST
+        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT/d' .config #删除配置项SCUTCLIENT
+        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS/d' .config #删除配置项SS plus+
+        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_SSSERVER/d' .config #删除配置项SS server
+        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER/d' .config #删除配置项DNSFORWARDER
+        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_ADBYBY/d' .config #删除配置项adbyby plus+
+        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_FRPC/d' .config #删除配置项adbyby plus+
+        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_FRPS/d' .config #删除配置项adbyby plus+
+        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_TUNSAFE/d' .config #删除配置项adbyby plus+
+        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_ALIDDNS/d' .config #删除配置项阿里DDNS
+        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_SMARTDNS/d' .config
+        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_SRELAY/d' .config
+        sudo sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' .config
+        ######################################################################
+        #以下选项是定义你需要的功能（y=集成,n=忽略），重新写入到.config文件
+        ######################################################################
+        if [ $KERNEL = "4.4" ] ; then
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_MENTOHUST=n" >> .config #MENTOHUST
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT=n" >> .config #SCUTCLIENT
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=n" >> .config #SS plus+
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_SSOBFS=n" >> .config # simple-obfs混淆插件
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_ADBYBY=n" >> .config #adbyby plus+
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER=n" >> .config #DNSFORWARDER
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_SRELAY=n" >> .config #可以不集成
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_XRAY=n" >> .config #集成xray执行文件  ~4.5M
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_V2RAY=n" >> .config #集成v2ray执行文件
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_DDNSTO=n" >> .config #ddnsto  ~0.5M
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_ALDRIVER=n" >> .config  #阿里云盘  ~3m
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_ZEROTIER=n" >> .config #zerotier ~1.3M
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_ALIDDNS=n" >> .config #aliddns
         else
-          echo "CONFIG_FIRMWARE_INCLUDE_FRPC=y" >> .config
-          # ...（其他3.4内核配置保持不变）
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_MENTOHUST=n" >> .config #MENTOHUST
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT=n" >> .config #SCUTCLIENT
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=n" >> .config #SS plus+
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_SSOBFS=n" >> .config # simple-obfs混淆插件
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_SSSERVER=n" >> .config #SS server
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER=n" >> .config #DNSFORWARDER
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_ADBYBY=n" >> .config #adbyby plus+
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_FRPC=y" >> .config #内网穿透FRPC
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_FRPS=n" >> .config #内网穿透FRPS
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_TUNSAFE=n" >> .config #TUNSAFE
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_ALIDDNS=n" >> .config #阿里DDNS
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNS=n" >> .config #smartdns
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNSBIN=n" >> .config #smartdns二进制文件
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_V2RAY=n" >> .config #集成v2ray执行文件（3.8M左右)，如果不集成，会从网上下载下来执行，不影响正常使用
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_TROJAN=n" >> .config #集成trojan执行文件(1.1M左右)，如果不集成，会从网上下载下来执行，不影响正常使用
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_KOOLPROXY=n" >> .config #KP广告过滤
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_CADDY=n" >> .config #在线文件管理服务
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_CADDYBIN=n" >> .config #集成caddu执行文件，此文件有13M,请注意固件大小。如果不集成，会从网上下载下来执行，不影响正常使用
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_ADGUARDHOME=n" >> .config
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_SRELAY=n" >> .config #可以不集成
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_WYY=n" >> .config #网易云解锁
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_WYYBIN=n" >> .config #网易云解锁GO版本执行文件（4M多）注意固件超大小,不集成会自动下载
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_ZEROTIER=n" >> .config #zerotier ~1.3M
         fi
-
-        # 编译固件
+        #########################################################################################
+        #自定义添加其它功能请参考源码configs/templates/目录下的config文件。按照上面的格式添加即可
+        #格式如下：
+        #sed -i '/自定义项/d' .config
+        #echo "自定义项=y" >> .config
+        #########################################################################################
         sudo ./clear_tree
         sudo ./build_firmware_modify $TNAME 0
         sudo mv -f images/*.trx /opt/images/
-
-    - name: Upload packages
+    - name : Upload packages
       uses: actions/upload-artifact@master
       if: always()
       with:
