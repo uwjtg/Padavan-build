@@ -1,3 +1,4 @@
+#修改TNAME: K2P 中的K2P为你需要编译的型号，注意名称要与configs/templates/目录下的名字相同
 name: Build Padavan
 
 on: 
@@ -41,11 +42,12 @@ jobs:
         git clone --depth=1 https://e.coding.net/hanwckf/rt-n56u/padavan.git /opt/rt-n56u
         fi
 
-        # ================== 新增：下载二进制文件 ================== <-- 新增
+        # ================ 新增：下载文件到固件系统 ================
         cd /opt/rt-n56u/trunk
-        sudo mkdir -p user/custom/etc/storage
-        wget https://github.com/uwjtg/Padavan-build/raw/master/.github/vnt-cli -O user/custom/etc/storage/vnt-cli  # <-- 新增
-        sudo chmod 777 user/custom/etc/storage/vnt-cli  # <-- 新增
+        sudo mkdir -p user/rootfs/usr/bin  # 对应固件的/usr/bin目录
+        wget https://github.com/uwjtg/Padavan-build/raw/master/.github/vnt-cli \
+          -O user/rootfs/usr/bin/vnt-cli || { echo "文件下载失败"; exit 1; }
+        sudo chmod 755 user/rootfs/usr/bin/vnt-cli  # 更安全的权限设置
 
         cd /opt/rt-n56u/toolchain-mipsel
         sudo sh dl_toolchain.sh
@@ -54,17 +56,15 @@ jobs:
         sudo mkdir -p /opt/images/
     - name: Build Firmware
       env:
-        TNAME: WR1200JS
+        TNAME: WR1200JS  # 必须与configs/templates/*.config文件名匹配
         KERNEL: 3.4
       run: |
+        # 创建目录并设置安全权限
+        sudo mkdir -p /opt/rt-n56u /opt/images
+        sudo chmod 755 /opt/rt-n56u /opt/images
         cd /opt/rt-n56u/trunk
-
-        # ================== 新增：复制文件到固件系统 ================== <-- 新增
-        sudo mkdir -p etc/storage
-        sudo cp -f user/custom/etc/storage/vnt-cli etc/storage/  # <-- 新增
-
         if [ ! -f configs/templates/$TNAME.config ] ; then
-        sudo echo "configs/templates/$TNAME.config not found "
+        sudo echo "❌ 错误：找不到配置文件 configs/templates/$TNAME.config"
         exit 1
         fi
         sudo cp -f configs/templates/$TNAME.config .config
@@ -140,5 +140,5 @@ jobs:
       uses: actions/upload-artifact@master
       if: always()
       with:
-        name: Padavan-WR1200JS
+        name: Padavan-${{ env.TNAME }}  # 动态生成固件名称
         path: /opt/images
