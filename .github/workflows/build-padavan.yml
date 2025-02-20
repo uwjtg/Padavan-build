@@ -46,6 +46,56 @@ jobs:
         #sudo ./clean_toolchain
         #sudo ./build_toolchain
         sudo mkdir -p /opt/images/
+
+        ########################################################################
+        # 以下为新增的vnt-cli安装部分（保持原始注释风格）
+        ########################################################################
+        # 创建vnt-cli目录结构
+        sudo mkdir -p /opt/rt-n56u/trunk/user/vnt-cli/files
+        # 下载预编译二进制文件
+        sudo wget -q -O /opt/rt-n56u/trunk/user/vnt-cli/files/vnt-cli \
+          https://github.com/lmq8267/vnt-cli/releases/download/1.2.16/vnt-cli_mipsel-unknown-linux-musl
+        sudo chmod +x /opt/rt-n56u/trunk/user/vnt-cli/files/vnt-cli
+        # 写入Makefile定义
+        sudo bash -c 'cat > /opt/rt-n56u/trunk/user/vnt-cli/Makefile' <<'EOF'
+        include $(TOPDIR)/rules.mk
+
+        PKG_NAME:=vnt-cli
+        PKG_VERSION:=1.2.16
+        PKG_RELEASE:=1
+
+        PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)
+
+        include $(INCLUDE_DIR)/package.mk
+
+        define Package/$(PKG_NAME)
+          SECTION:=net
+          CATEGORY:=Network
+          TITLE:=vnt-cli tunneling tool
+          DEPENDS:=+libopenssl
+        endef
+
+        define Package/$(PKG_NAME)/description
+          Simple VPN tunneling tool
+        endef
+
+        define Build/Prepare
+        endef
+
+        define Build/Configure
+        endef
+
+        define Build/Compile
+        endef
+
+        define Package/$(PKG_NAME)/install
+        	$(INSTALL_DIR) $(1)/usr/bin
+        	$(INSTALL_BIN) ./files/vnt-cli $(1)/usr/bin/
+        endef
+
+        $(eval $(call BuildPackage,$(PKG_NAME)))
+        EOF
+
     - name: Build Firmware
       env:
         TNAME: WR1200JS
@@ -60,12 +110,6 @@ jobs:
         exit 1
         fi
         sudo cp -f configs/templates/$TNAME.config .config
-        
-        # 添加vnt-cli二进制文件到固件
-        sudo mkdir -p user/usr/bin
-        sudo wget https://github.com/lmq8267/vnt-cli/releases/download/1.2.16/vnt-cli_mipsel-unknown-linux-musl -O user/usr/bin/vnt-cli
-        sudo chmod +x user/usr/bin/vnt-cli
-
         sudo sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' .config
         ################################################################################################
         #因不同型号配置功能不一样，所以先把配置项删除，如果你自己要添加其他的，也要写上删除这一条，切记！！！
@@ -125,6 +169,12 @@ jobs:
         sudo echo "CONFIG_FIRMWARE_INCLUDE_WYYBIN=n" >> .config #网易云解锁GO版本执行文件（4M多）注意固件超大小,不集成会自动下载
         sudo echo "CONFIG_FIRMWARE_INCLUDE_ZEROTIER=n" >> .config #zerotier ~1.3M
         fi
+
+        ######################################################################
+        # 新增vnt-cli配置（保持原始注释风格）
+        ######################################################################
+        sudo echo "CONFIG_FIRMWARE_INCLUDE_VNT_CLI=y" >> .config #vnt-cli穿透工具
+
         #########################################################################################
         #自定义添加其它功能请参考源码configs/templates/目录下的config文件。按照上面的格式添加即可
         #格式如下：
