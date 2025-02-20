@@ -1,76 +1,67 @@
-name: Build Padavan
+name: Build Padavan With VNT
 
 on: 
-  release:
-    types: [published]
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-20.04
-    if: github.event.repository.owner.id == github.event.sender.id
+    env:
+      TNAME: WR1200JS  # 修改为你的设备型号（需匹配configs/templates下的文件名）
+      VNT_VERSION: v1.2.16  # VNT版本号<a target="_blank" href="https://github.com/lmq8267/padavan-KVR" class="hitref" data-title="修改自用的Padavan-KVR 3.4 透明主题 - GitHub" data-snippet='修改自用的Padavan-KVR 3.4 透明主题，添加了一些插件（VNT 皎月连CloudFlared Lucky Alist Tailscale等） - lmq8267/padavan-KVR.' data-url="https://github.com/lmq8267/padavan-KVR">3</a>
 
     steps:
-    - name: Checkout
+    - name: Checkout source
       uses: actions/checkout@v4
 
     - name: Install dependencies
-      env:
-        DEBIAN_FRONTEND: noninteractive
       run: |
         sudo apt-get update
-        sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot \
-        cpio git python-docutils gettext automake autopoint texinfo build-essential help2man \
-        pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget
+        sudo apt-get install -y unzip libtool-bin cmake gperf bison flex \
+        gettext automake autopoint texinfo build-essential pkg-config zlib1g-dev
 
-    - name: Clone source code
-      env:
-        KERNEL: 3.4
+    - name: Setup toolchain
       run: |
-        sudo chmod -R 777 /opt
-        git clone --depth=1 https://github.com/MeIsReallyBa/padavan-4.4.git /opt/rt-n56u
+        git clone --depth=1 https://github.com/chongshengB/rt-n56u /opt/rt-n56u
         cd /opt/rt-n56u/toolchain-mipsel
-        sudo sh dl_toolchain.sh
-        sudo mkdir -p /opt/images/
+        sudo bash dl_toolchain.sh
 
-    - name: Setup VNT
+    - name: Integrate VNT
       run: |
-        # 下载VNT二进制文件<a target="_blank" href="https://github.com/lmq8267/padavan-KVR" class="hitref" data-title="修改自用的Padavan-KVR 3.4 透明主题 - GitHub" data-snippet='修改自用的Padavan-KVR 3.4 透明主题，添加了一些插件（VNT 皎月连CloudFlared Lucky Alist Tailscale等） - lmq8267/padavan-KVR.' data-url="https://github.com/lmq8267/padavan-KVR">1</a><a target="_blank" href="https://gitee.com/xiueb_admin/actions-build-padavan-openwrt?skip_mobile=true" class="hitref" data-title="actions-build-padavan-openwrt: GitHub Action 学习实例 - Gitee" data-snippet='GitHub Action 学习实例- 自动编译padavan 和openWrt. ... Gitee 持续集成 · OpenAPI · 帮助文档 · 在线自助服务 · 更新日志 · 关于我们 · 加入我们 · 使用条款 · 意见建议.' data-url="https://gitee.com/xiueb_admin/actions-build-padavan-openwrt?skip_mobile=true">10</a>
+        # 下载VNT二进制（含重试机制）<a target="_blank" href="https://github.com/huazhuangnan/actions-build-padavan-openwrt" class="hitref" data-title="GitHub Action 学习实例- 自动编译padavan 和openWrt" data-snippet='前言 · openwrt 单独参数及功能说明 · padavan 单独参数及功能说明 · 下载编译完成固件 · 更新日志 · 本地编译 · github 编译方法 · 目录说明.' data-url="https://github.com/huazhuangnan/actions-build-padavan-openwrt">8</a>
         sudo mkdir -p /opt/rt-n56u/trunk/user/scripts
-        wget https://github.com/vnt-dev/vnt/releases/latest/download/vnt-mipsel -O /opt/rt-n56u/trunk/user/scripts/vnt
-        sudo chmod +x /opt/rt-n56u/trunk/user/scripts/vnt
+        for i in {1..3}; do
+          wget https://github.com/vnt-dev/vnt/releases/download/${{ env.VNT_VERSION }}/vnt-mipsel \
+            -O /opt/rt-n56u/trunk/user/scripts/vnt && break || sleep 15
+        done
         
-        # 创建自启动脚本<a target="_blank" href="https://okhk.net/build-padavan-firmware-for-rm2100" class="hitref" data-title="利用GitHub Action 自定义构建Padavan 路由固件 - HK&#39;s note" data-snippet='首先，在GitHub 上新建一个仓库，并下载Padavan 固件的源代码。然后，根据自己的需求修改配置文件和自定义脚本。接着，在GitHub Action 的配置文件中设置编译 ...' data-url="https://okhk.net/build-padavan-firmware-for-rm2100">3</a>
-        echo -e '#!/bin/sh\n/opt/rt-n56u/trunk/user/scripts/vnt &' | sudo tee /opt/rt-n56u/trunk/user/scripts/post_wan_script.sh
+        # 备用下载源<a target="_blank" href="https://github.com/lmq8267/padavan-KVR" class="hitref" data-title="修改自用的Padavan-KVR 3.4 透明主题 - GitHub" data-snippet='修改自用的Padavan-KVR 3.4 透明主题，添加了一些插件（VNT 皎月连CloudFlared Lucky Alist Tailscale等） - lmq8267/padavan-KVR.' data-url="https://github.com/lmq8267/padavan-KVR">3</a>
+        [ ! -f /opt/rt-n56u/trunk/user/scripts/vnt ] && \
+          wget https://cdn.jsdelivr.net/gh/vnt-dev/vnt@${{ env.VNT_VERSION }}/bin/mipsel/vnt \
+          -O /opt/rt-n56u/trunk/user/scripts/vnt
+        
+        sudo chmod +x /opt/rt-n56u/trunk/user/scripts/vnt
+        echo -e '#!/bin/sh\n/opt/etc/storage/vnt &' | sudo tee /opt/rt-n56u/trunk/user/scripts/post_wan_script.sh
         sudo chmod +x /opt/rt-n56u/trunk/user/scripts/post_wan_script.sh
 
-    - name: Build Firmware
-      env:
-        TNAME: WR1200JS
-        KERNEL: 3.4
+    - name: Build firmware
       run: |
         cd /opt/rt-n56u/trunk
-        sudo cp -f configs/templates/$TNAME.config .config
+        sudo cp configs/templates/${{ env.TNAME }}.config .config
         
-        # 清理旧配置<a target="_blank" href="https://okhk.net/build-padavan-firmware-for-rm2100" class="hitref" data-title="利用GitHub Action 自定义构建Padavan 路由固件 - HK&#39;s note" data-snippet='首先，在GitHub 上新建一个仓库，并下载Padavan 固件的源代码。然后，根据自己的需求修改配置文件和自定义脚本。接着，在GitHub Action 的配置文件中设置编译 ...' data-url="https://okhk.net/build-padavan-firmware-for-rm2100">3</a><a target="_blank" href="https://gitee.com/xiueb_admin/actions-build-padavan-openwrt?skip_mobile=true" class="hitref" data-title="actions-build-padavan-openwrt: GitHub Action 学习实例 - Gitee" data-snippet='GitHub Action 学习实例- 自动编译padavan 和openWrt. ... Gitee 持续集成 · OpenAPI · 帮助文档 · 在线自助服务 · 更新日志 · 关于我们 · 加入我们 · 使用条款 · 意见建议.' data-url="https://gitee.com/xiueb_admin/actions-build-padavan-openwrt?skip_mobile=true">10</a>
-        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_VNT/d' .config
-        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION/d' .config
-        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_FRPC/d' .config
-        
-        # 写入新配置
-        echo "CONFIG_FIRMWARE_INCLUDE_FRPC=y" | sudo tee -a .config
+        # 配置VNT集成<a target="_blank" href="https://github.com/lmq8267/padavan-KVR" class="hitref" data-title="修改自用的Padavan-KVR 3.4 透明主题 - GitHub" data-snippet='修改自用的Padavan-KVR 3.4 透明主题，添加了一些插件（VNT 皎月连CloudFlared Lucky Alist Tailscale等） - lmq8267/padavan-KVR.' data-url="https://github.com/lmq8267/padavan-KVR">3</a><a target="_blank" href="https://github.com/huazhuangnan/actions-build-padavan-openwrt" class="hitref" data-title="GitHub Action 学习实例- 自动编译padavan 和openWrt" data-snippet='前言 · openwrt 单独参数及功能说明 · padavan 单独参数及功能说明 · 下载编译完成固件 · 更新日志 · 本地编译 · github 编译方法 · 目录说明.' data-url="https://github.com/huazhuangnan/actions-build-padavan-openwrt">8</a>
         echo "CONFIG_FIRMWARE_INCLUDE_VNT=y" | sudo tee -a .config
+        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION/d' .config
         
-        # 编译命令<a target="_blank" href="https://github.com/lmq8267/padavan-KVR" class="hitref" data-title="修改自用的Padavan-KVR 3.4 透明主题 - GitHub" data-snippet='修改自用的Padavan-KVR 3.4 透明主题，添加了一些插件（VNT 皎月连CloudFlared Lucky Alist Tailscale等） - lmq8267/padavan-KVR.' data-url="https://github.com/lmq8267/padavan-KVR">1</a>
         sudo ./clear_tree
-        sudo ./build_firmware_modify $TNAME 0
-        sudo mv -f images/*.trx /opt/images/
+        sudo ./build_firmware_modify ${{ env.TNAME }} 0
+        sudo mv images/*.trx $GITHUB_WORKSPACE/
 
-    - name: Upload firmware
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Padavan-${{ env.TNAME }}
-        path: /opt/images/*.trx
+        name: Padavan-WR1200JS
+        path: $GITHUB_WORKSPACE/*.trx
