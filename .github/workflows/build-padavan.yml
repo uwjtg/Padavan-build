@@ -36,7 +36,7 @@ jobs:
         # 修改为你的仓库地址
         sudo mkdir -p /opt
         sudo chmod 777 /opt
-        git clone --depth=1 https://github.com/你的用户名/rt-n56u.git /opt/rt-n56u
+        git clone --depth=1 https://github.com/uwjtg/rt-n56u.git /opt/rt-n56u
         
         # 准备工具链（3.4专用）
         cd /opt/rt-n56u/toolchain-mipsel
