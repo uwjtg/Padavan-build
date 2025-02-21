@@ -1,70 +1,49 @@
 name: Build Padavan
 
 on: 
-  release:
-    types: [published]
-  push:
-    tags:
-    - 'v*'
   workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
-    if: github.event.repository.owner.id == github.event.sender.id
-
+    runs-on: ubuntu-22.04
     steps:
     - name: Checkout
-      uses: actions/checkout@master
-    - name: Initialization environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
-        KERNEL: 4.4
+      uses: actions/checkout@v4
+      
+    - name: Setup Environment
       run: |
         sudo apt-get update
-        sudo apt install -y unzip libtool-bin curl cmake gperf gawk flex bison nano xxd \
-        fakeroot kmod cpio git python3-docutils gettext automake autopoint \
-        texinfo build-essential help2man pkg-config zlib1g-dev libgmp3-dev \
-        libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget libc-dev-bin \
-        libssl-dev libelf-dev
-    - name: Clone source code
-      env:
-        KERNEL: 4.4
+        sudo apt-get -y install build-essential flex bison gperf libncurses5-dev libreadline-dev \
+          zlib1g-dev libssl-dev unzip curl cmake git python3-pip
+        sudo pip3 install pycryptodome
+        
+    - name: Clone Source
       run: |
         git clone --depth=1 https://github.com/uwjtg/rt-n56u.git /opt/rt-n56u
         cd /opt/rt-n56u/toolchain-mipsel
-        sed -i 's@github.com@ghproxy.com/github.com@g' dl_toolchain.sh  # 国内加速
+        chmod +x dl_toolchain.sh
         ./dl_toolchain.sh
-        mkdir -p /opt/images/
+        
     - name: Build Firmware
       env:
-        TNAME: K2P  # 修改为您的设备型号
-        KERNEL: 4.4
+        TNAME: WR1200JS  # 修改为您的设备型号
       run: |
         cd /opt/rt-n56u/trunk
-        cp -f configs/templates/$TNAME.config .config
-        
-        # 强制设置Storage分区为3MB
+        # 设置Storage分区为3MB
         sed -i 's/CONFIG_MTD_STORE_PART_SIZ=0x00080000/CONFIG_MTD_STORE_PART_SIZ=0x00300000/g' configs/templates/$TNAME.config
-        echo "CONFIG_MTD_STORE_PART_SIZ=0x00300000" >> configs/templates/$TNAME.config
+        # 启用FRPC插件
+        echo "CONFIG_FIRMWARE_INCLUDE_FRPC=y" >> configs/templates/$TNAME.config
         
-        # 清理冲突配置
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_FRPC/d' configs/templates/$TNAME.config
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE/d' configs/templates/$TNAME.config
-        
-        # 启用FRPC和其他必要功能
-        echo "CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y" >> configs/templates/$TNAME.config
-        echo "CONFIG_FIRMWARE_INCLUDE_FRPC=y" >> configs/templates/$TNAME.config  # 启用FRPC
-        echo "CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=y" >> configs/templates/$TNAME.config
-        echo "CONFIG_FIRMWARE_INCLUDE_XRAY=n" >> configs/templates/$TNAME.config   # 关闭非必要插件
-        
-        # 编译命令
         sudo ./clear_tree
         sudo ./build_firmware_modify $TNAME 0
-        sudo mv -f images/*.trx /opt/images/
-    - name: Upload packages
-      uses: actions/upload-artifact@master
-      if: always()
+        sudo mkdir -p /opt/images
+        sudo cp -f images/*.trx /opt/images/ || exit 0
+        
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
       with:
-        name: Padavan-packages
+        name: Padavan-Firmware
         path: /opt/images/
+        if-no-files-found: error  # 强制报错避免静默失败
