@@ -1,70 +1,34 @@
-name: Build Padavan
+- name: Build firmware
+  env:
+    DEVICE: ${{ inputs.device }}
+  run: |
+    set -ex  # 启用详细日志
+    cd rt-n56u/trunk
+    
+    # 强制验证配置文件
+    [ ! -f "configs/templates/$DEVICE.config" ] && echo "::error ::设备模板 $DEVICE.config 不存在" && exit 1
+    
+    # 修复权限问题
+    sudo chmod -R 777 .
+    
+    # 核心编译命令
+    fakeroot -- ./build_firmware_modify $DEVICE 0 2>&1 | tee build.log  # 
+    
+    # 产物收集（严格校验）
+    mkdir -p ../output
+    if ls images/*.trx >/dev/null 2>&1; then
+      mv -v images/*.trx ../output/
+    else
+      echo "::error ::编译未生成固件文件"
+      exit 1
+    fi
+    cp build.log ../output/
 
-on:
-  workflow_dispatch:
-    inputs:
-      device:
-        description: '设备型号 (如 PSG1218)'
-        required: true
-        default: 'PSG1218'
-
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 180
-
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison \
-        xxd cpio git python3-docutils gettext automake autopoint texinfo \
-        pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev \
-        fakeroot  # 关键依赖添加
-
-    - name: Clone source
-      run: |
-        git clone --depth=1 https://github.com/uwjtg/rt-n56u.git rt-n56u || \
-        (sleep 30 && git clone --depth=1 https://github.com/uwjtg/rt-n56u.git rt-n56u)
-
-    - name: Setup toolchain
-      run: |
-        cd rt-n56u/toolchain-mipsel
-        chmod +x dl_toolchain.sh
-        for i in {1..3}; do
-          ./dl_toolchain.sh && break || sleep 60
-        done
-        [ -d toolchain-mipsel ] || exit 1
-
-    - name: Build firmware
-      env:
-        DEVICE: ${{ inputs.device }}
-      run: |
-        set -ex
-        cd rt-n56u/trunk
-        
-        # 验证配置文件存在性
-        [ ! -f configs/templates/$DEVICE.config ] && echo "::error ::配置文件 $DEVICE.config 不存在" && exit 1
-        
-        # 应用配置模板
-        cp configs/templates/$DEVICE.config .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/' .config
-        
-        # 核心修复：使用fakeroot执行编译命令
-        fakeroot ./build_firmware_modify $DEVICE 0 2>&1 | tee build.log
-        
-        # 收集产物
-        mkdir -p output
-        [ -n "$(ls -A images/*.trx 2>/dev/null)" ] && mv images/*.trx output/ || echo "::warning::未生成固件文件"
-
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: padavan-build-${{ github.run_id }}
-        path: |
-          rt-n56u/trunk/output/*.trx
-          rt-n56u/trunk/build.log
+- name: Upload artifacts
+  uses: actions/upload-artifact@v4
+  if: always()
+  with:
+    name: build-artifacts
+    path: |
+      rt-n56u/output/*.trx
+      rt-n56u/output/build.log  # 
