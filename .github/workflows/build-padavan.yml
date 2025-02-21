@@ -1,63 +1,64 @@
 name: Build Padavan
 
 on: 
-  release:
-    types: [published]
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       device:
-        description: '设备型号 (如 PSG1218)'
+        description: '设备型号 (例如 PSG1218、WR1200JS)'
         required: true
+        default: 'PSG1218'
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
-    env:
-      KERNEL: 3.4
-    
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
     steps:
-    - name: Checkout
-      uses: actions/checkout@v2
+    - name: 检出仓库
+      uses: actions/checkout@v4
 
-    - name: Setup environment
+    - name: 安装编译依赖
       run: |
-        apt-get update
-        apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd \
-        cpio git python-docutils gettext automake autopoint texinfo build-essential \
-        pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev wget
+        sudo apt-get update
+        sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison \
+        xxd cpio git python3-docutils gettext automake autopoint texinfo \
+        pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev
 
-    - name: Clone source
+    - name: 克隆Padavan源码
       run: |
         git clone --depth=1 https://github.com/uwjtg/rt-n56u.git $GITHUB_WORKSPACE/rt-n56u
         cd $GITHUB_WORKSPACE/rt-n56u/toolchain-mipsel
         chmod +x dl_toolchain.sh
         ./dl_toolchain.sh
 
-    - name: Build firmware
+    - name: 编译固件
       env:
-        TNAME: ${{ github.event.inputs.device || 'PSG1218' }}  # 默认编译K2P
+        DEVICE: ${{ inputs.device }}
       run: |
         cd $GITHUB_WORKSPACE/rt-n56u/trunk
-        cp -f configs/templates/$TNAME.config .config
+        [ ! -f configs/templates/$DEVICE.config ] && echo "❌ 设备模板不存在" && exit 1
         
-        # 清理旧配置
+        # 应用基础配置
+        cp configs/templates/$DEVICE.config .config
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/' .config
+
+        # 清理冗余功能
         sed -i '/CONFIG_FIRMWARE_INCLUDE_MENTOHUST/d' .config
         sed -i '/CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT/d' .config
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_FRPC/d' .config
 
-        # 添加新配置
+        # 添加必要组件
         echo "CONFIG_FIRMWARE_INCLUDE_FRPC=y" >> .config
-        echo "CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_TTYD=y" >> .config
 
+        # 开始编译
         ./clear_tree
-        ./build_firmware_modify $TNAME 0
-        mv -f images/*.trx $GITHUB_WORKSPACE/
+        ./build_firmware_modify $DEVICE 0
+        mkdir -p $GITHUB_WORKSPACE/output
+        mv images/*.trx $GITHUB_WORKSPACE/output/
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v2
+    - name: 上传固件
+      uses: actions/upload-artifact@v4
       with:
-        name: Padavan-${{ env.TNAME }}-固件
-        path: $GITHUB_WORKSPACE/*.trx
+        name: Padavan-${{ inputs.device }}-固件
+        path: $GITHUB_WORKSPACE/output/*.trx
+        retention-days: 7
