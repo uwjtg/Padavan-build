@@ -1,4 +1,3 @@
-#修改TNAME: K2P中的型号为设备对应型号，名称需与configs/templates目录一致
 name: Build Padavan
 
 on: 
@@ -7,142 +6,65 @@ on:
   push:
     tags:
     - 'v*'
-  watch:
-    types: [started]
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
     if: github.event.repository.owner.id == github.event.sender.id
 
     steps:
     - name: Checkout
       uses: actions/checkout@master
-
-    - name: 初始化环境
+    - name: Initialization environment
       env:
         DEBIAN_FRONTEND: noninteractive
+        KERNEL: 4.4
       run: |
         sudo apt-get update
-        # ubuntu-22.04适配依赖（参考）
-        sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot \
-        cpio git python3-docutils gettext automake autopoint texinfo build-essential help2man \
-        pkg-config zlib1g-dev libgmp-dev libmpc-dev libmpfr-dev libncurses-dev libltdl-dev wget
-
-    - name: 克隆源码
+        sudo apt install -y unzip libtool-bin curl cmake gperf gawk flex bison nano xxd \
+        fakeroot kmod cpio git python3-docutils gettext automake autopoint \
+        texinfo build-essential help2man pkg-config zlib1g-dev libgmp3-dev \
+        libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget libc-dev-bin \
+        libssl-dev libelf-dev
+    - name: Clone source code
       env:
-        KERNEL: 3.4
+        KERNEL: 4.4
       run: |
-        sudo chmod -R 777 /opt
-        if [ $KERNEL = "4.4" ] ; then
-        git clone --depth=1 https://github.com/MeIsReallyBa/padavan-4.4.git /opt/rt-n56u
-        else
-        # 使用hanwckf源码仓库（参考）
-        git clone --depth=1 https://e.coding.net/hanwckf/rt-n56u/padavan.git /opt/rt-n56u
-        fi
+        git clone --depth=1 https://github.com/uwjtg/rt-n56u.git /opt/rt-n56u
         cd /opt/rt-n56u/toolchain-mipsel
-        sudo sh dl_toolchain.sh
-        sudo mkdir -p /opt/images/
-
-        # vnt-cli集成部分（参考）
-        sudo mkdir -p /opt/rt-n56u/trunk/user/vnt-cli/files
-        sudo wget -q -O /opt/rt-n56u/trunk/user/vnt-cli/files/vnt-cli \
-          https://github.com/lmq8267/vnt-cli/releases/download/1.2.16/vnt-cli_mipsel-unknown-linux-musl
-        sudo chmod +x /opt/rt-n56u/trunk/user/vnt-cli/files/vnt-cli
-        sudo bash -c 'cat > /opt/rt-n56u/trunk/user/vnt-cli/Makefile' <<'EOF'
-        include $(TOPDIR)/rules.mk
-        PKG_NAME:=vnt-cli
-        PKG_VERSION:=1.2.16
-        PKG_RELEASE:=1
-        PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)
-        include $(INCLUDE_DIR)/package.mk
-        define Package/$(PKG_NAME)
-          SECTION:=net
-          CATEGORY:=Network
-          TITLE:=vnt-cli tunneling tool
-          DEPENDS:=+libopenssl
-        endef
-        define Package/$(PKG_NAME)/description
-          Simple VPN tunneling tool
-        endef
-        define Build/Prepare
-        endef
-        define Build/Configure
-        endef
-        define Build/Compile
-        endef
-        define Package/$(PKG_NAME)/install
-        	$(INSTALL_DIR) $(1)/usr/bin
-        	$(INSTALL_BIN) ./files/vnt-cli $(1)/usr/bin/
-        endef
-        $(eval $(call BuildPackage,$(PKG_NAME)))
-        EOF
-
-    - name: 编译固件
+        sed -i 's@github.com@ghproxy.com/github.com@g' dl_toolchain.sh  # 国内加速
+        ./dl_toolchain.sh
+        mkdir -p /opt/images/
+    - name: Build Firmware
       env:
-        TNAME: WR1200JS
-        KERNEL: 3.4
+        TNAME: K2P  # 修改为您的设备型号
+        KERNEL: 4.4
       run: |
-        sudo mkdir -p /opt/rt-n56u /opt/images
-        sudo chmod 755 /opt/rt-n56u /opt/images
         cd /opt/rt-n56u/trunk
+        cp -f configs/templates/$TNAME.config .config
         
-        # 配置检查（参考）
-        if [ ! -f configs/templates/$TNAME.config ]; then
-          echo "错误：找不到$TNAME配置文件" && exit 1
-        fi
-        sudo cp -f configs/templates/$TNAME.config .config
+        # 强制设置Storage分区为3MB
+        sed -i 's/CONFIG_MTD_STORE_PART_SIZ=0x00080000/CONFIG_MTD_STORE_PART_SIZ=0x00300000/g' configs/templates/$TNAME.config
+        echo "CONFIG_MTD_STORE_PART_SIZ=0x00300000" >> configs/templates/$TNAME.config
         
-        # 基础配置修改
-        sudo sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' .config
-        sudo sed -i '/CONFIG_FIRMWARE_INCLUDE_VNT_CLI/d' .config
-        echo "CONFIG_FIRMWARE_INCLUDE_VNT_CLI=y" | sudo tee -a .config
+        # 清理冲突配置
+        sed -i '/CONFIG_FIRMWARE_INCLUDE_FRPC/d' configs/templates/$TNAME.config
+        sed -i '/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE/d' configs/templates/$TNAME.config
         
-        # 清理不需要的组件（参考）
-        remove_configs=(
-          CONFIG_FIRMWARE_INCLUDE_MENTOHUST
-          CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT
-          CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS
-          CONFIG_FIRMWARE_INCLUDE_SSSERVER
-          CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER
-          CONFIG_FIRMWARE_INCLUDE_ADBYBY
-          CONFIG_FIRMWARE_INCLUDE_FRPC
-          CONFIG_FIRMWARE_INCLUDE_FRPS
-          CONFIG_FIRMWARE_INCLUDE_TUNSAFE
-          CONFIG_FIRMWARE_INCLUDE_ALIDDNS
-          CONFIG_FIRMWARE_INCLUDE_SMARTDNS
-          CONFIG_FIRMWARE_INCLUDE_SRELAY
-        )
-        for config in "${remove_configs[@]}"; do
-          sudo sed -i "/$config/d" .config
-        done
+        # 启用FRPC和其他必要功能
+        echo "CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y" >> configs/templates/$TNAME.config
+        echo "CONFIG_FIRMWARE_INCLUDE_FRPC=y" >> configs/templates/$TNAME.config  # 启用FRPC
+        echo "CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=y" >> configs/templates/$TNAME.config
+        echo "CONFIG_FIRMWARE_INCLUDE_XRAY=n" >> configs/templates/$TNAME.config   # 关闭非必要插件
         
-        # 添加必要组件
-        echo "CONFIG_FIRMWARE_INCLUDE_FRPC=y" | sudo tee -a .config
-        
-        # 调试命令（参考）
-        echo "=== 配置文件检查 ==="
-        grep "CONFIG_FIRMWARE_INCLUDE_VNT_CLI=y" .config || (echo "错误：vnt-cli配置未生效"; exit 1)
-        
-        # 开始编译
+        # 编译命令
         sudo ./clear_tree
-        sudo ./build_firmware_modify $TNAME 0 | tee build.log
-        
-        # 日志验证
-        echo "=== 编译日志验证 ==="
-        grep "vnt-cli" build.log || (echo "错误：vnt-cli未出现在编译日志"; exit 1)
-        
-        # 固件验证
-        echo "=== 固件内容检查 ==="
-        sudo mkdir -p /tmp/fw_check
-        sudo unzip -oj /opt/images/*.trx -d /tmp/fw_check
-        ls -la /tmp/fw_check/usr/bin/vnt-cli || (echo "错误：vnt-cli未集成到固件"; exit 1)
-
+        sudo ./build_firmware_modify $TNAME 0
         sudo mv -f images/*.trx /opt/images/
-
-    - name: 上传固件
+    - name: Upload packages
       uses: actions/upload-artifact@master
       if: always()
       with:
-        name: Padavan-${{ env.TNAME }}
-        path: /opt/images
+        name: Padavan-packages
+        path: /opt/images/
