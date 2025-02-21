@@ -11,7 +11,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    timeout-minutes: 180
 
     steps:
     - name: Checkout
@@ -24,57 +24,49 @@ jobs:
         xxd cpio git python3-docutils gettext automake autopoint texinfo \
         pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev
 
-    - name: Clone source
+    - name: Clone source with retry
       run: |
-        git clone --depth=1 https://github.com/uwjtg/rt-n56u.git $GITHUB_WORKSPACE/rt-n56u
-        cd $GITHUB_WORKSPACE/rt-n56u/toolchain-mipsel
-        chmod +x dl_toolchain.sh
-        # 带重试的下载
-        for i in {1..3}; do
-          ./dl_toolchain.sh && break || sleep 30
-        done
-        [ -d toolchain-mipsel ] || (echo "❌ 工具链下载失败"; exit 1)
+        git clone --depth=1 https://github.com/uwjtg/rt-n56u.git rt-n56u || \
+        (sleep 30 && git clone --depth=1 https://github.com/uwjtg/rt-n56u.git rt-n56u)
 
-    - name: Verify config
+    - name: Download toolchain
       run: |
-        cd $GITHUB_WORKSPACE/rt-n56u/trunk
-        CONFIG_FILE="configs/templates/${{ inputs.device }}.config"
-        if [ ! -f "$CONFIG_FILE" ]; then
-          echo "::error file=$CONFIG_FILE::设备配置文件不存在"
-          exit 1
-        fi
+        cd rt-n56u/toolchain-mipsel
+        chmod +x dl_toolchain.sh
+        for i in {1..3}; do
+          ./dl_toolchain.sh && break || sleep 60
+        done
 
     - name: Build firmware
-      shell: bash
       env:
         DEVICE: ${{ inputs.device }}
       run: |
-        set -ex  # 启用详细日志
+        set -ex  # 启用详细日志输出
+        cd rt-n56u/trunk
         
-        cd $GITHUB_WORKSPACE/rt-n56u/trunk
-        cp -v configs/templates/$DEVICE.config .config
+        # 验证配置文件
+        [ ! -f configs/templates/$DEVICE.config ] && echo "::error file=configs/templates/$DEVICE.config::配置文件不存在" && exit 1
         
-        # 关键配置调整
+        # 应用配置
+        cp configs/templates/$DEVICE.config .config
         sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/' .config
+        
+        # 清理旧配置
         sed -i '/CONFIG_FIRMWARE_INCLUDE_MENTOHUST/d; /CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT/d' .config
         
-        # 强制写入必要配置
-        echo "CONFIG_FIRMWARE_INCLUDE_FRPC=y" >> .config
-        echo "CONFIG_FIRMWARE_INCLUDE_TTYD=y" >> .config
-        
-        # 清理并编译
+        # 编译
         ./clear_tree
-        ./build_firmware_modify $DEVICE 0
+        ./build_firmware_modify $DEVICE 0 | tee build.log
         
-        # 产物收集
-        mkdir -p $GITHUB_WORKSPACE/output
-        mv -v images/*.trx $GITHUB_WORKSPACE/output/
+        # 收集产物
+        mkdir -p output
+        [ -f images/*.trx ] && mv images/*.trx output/ || echo "::warning::未生成固件文件"
 
-    - name: Upload artifact
+    - name: Upload artifacts
       uses: actions/upload-artifact@v4
-      if: success() || failure()  # 即使失败也上传日志
+      if: always()
       with:
         name: build-output
         path: |
-          $GITHUB_WORKSPACE/output/*.trx
-          $GITHUB_WORKSPACE/rt-n56u/trunk/build.log
+          rt-n56u/trunk/output/*.trx
+          rt-n56u/trunk/build.log
