@@ -62,11 +62,6 @@ jobs:
         TNAME: ${{ inputs.device || 'WR1200JS' }}  # 默认设备型号
         KERNEL: 3.4
       run: |
-        ################################################################
-        # 存储分区设置（核心修改）
-        STORAGE_SIZE="0x400000"  # 4MB = 4194304 bytes
-        ################################################################
-
         # 创建目录并设置安全权限
         mkdir -p /opt/rt-n56u /opt/images
         chmod 755 /opt/rt-n56u /opt/images
@@ -81,15 +76,7 @@ jobs:
         
         # 应用设备配置
         cp -f configs/templates/$TNAME.config .config
-        
-        ################################################################################################
-        # 存储分区修改（添加以下代码块）
-        ################################################################################################
-        # 删除旧存储配置（如果存在）
-        sed -i '/CONFIG_MTD_STORE_PART_SIZ/d' .config
-        # 写入新存储配置
-        echo "CONFIG_MTD_STORE_PART_SIZ=$STORAGE_SIZE" >> .config
-        
+           
         # 原有配置调整保持不变
         sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' .config
         
