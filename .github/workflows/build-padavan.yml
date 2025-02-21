@@ -2,8 +2,6 @@ name: Build Padavan
 
 on: 
   workflow_dispatch:
-  push:
-    branches: [main]
 
 jobs:
   build:
@@ -11,26 +9,26 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-      
-    - name: Setup Environment
+
+    - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get -y install build-essential flex bison gperf libncurses5-dev libreadline-dev \
-          zlib1g-dev libssl-dev unzip curl cmake git python3-pip
-        sudo pip3 install pycryptodome
-        
+        sudo apt-get -y install build-essential flex bison gperf libcap-ng-dev \
+          zlib1g-dev libssl-dev unzip curl cmake git python3-pip libncurses5-dev
+
     - name: Clone Source
       run: |
         git clone --depth=1 https://github.com/uwjtg/rt-n56u.git /opt/rt-n56u
         cd /opt/rt-n56u/toolchain-mipsel
         chmod +x dl_toolchain.sh
         ./dl_toolchain.sh
-        
+
     - name: Build Firmware
       env:
-        TNAME: WR1200JS  # 修改为您的设备型号
+        TNAME: K2P  # 修改为您的设备型号
       run: |
         cd /opt/rt-n56u/trunk
+        sudo make clean
         # 设置Storage分区为3MB
         sed -i 's/CONFIG_MTD_STORE_PART_SIZ=0x00080000/CONFIG_MTD_STORE_PART_SIZ=0x00300000/g' configs/templates/$TNAME.config
         # 启用FRPC插件
@@ -40,10 +38,9 @@ jobs:
         sudo ./build_firmware_modify $TNAME 0
         sudo mkdir -p /opt/images
         sudo cp -f images/*.trx /opt/images/ || exit 0
-        
+
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: Padavan-Firmware
         path: /opt/images/
-        if-no-files-found: error  # 强制报错避免静默失败
