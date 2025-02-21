@@ -25,10 +25,10 @@ jobs:
 
     - name: Build Firmware
       env:
-        TNAME: K2P  # 修改为您的设备型号
+        TNAME: WR1200JS  # 修改为您的设备型号
       run: |
         cd /opt/rt-n56u/trunk
-        sudo make clean
+        sudo make clean  # 清理旧编译缓存
         # 设置Storage分区为3MB
         sed -i 's/CONFIG_MTD_STORE_PART_SIZ=0x00080000/CONFIG_MTD_STORE_PART_SIZ=0x00300000/g' configs/templates/$TNAME.config
         # 启用FRPC插件
