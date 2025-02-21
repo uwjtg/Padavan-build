@@ -1,46 +1,63 @@
 name: Build Padavan
 
 on: 
+  release:
+    types: [published]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
+    inputs:
+      device:
+        description: '设备型号 (如 PSG1218)'
+        required: true
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
+    env:
+      KERNEL: 3.4
+    
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v2
 
-    - name: Install Dependencies
+    - name: Setup environment
       run: |
-        sudo apt-get update
-        sudo apt-get -y install build-essential flex bison gperf libcap-ng-dev \
-          zlib1g-dev libssl-dev unzip curl cmake git python3-pip libncurses5-dev
+        apt-get update
+        apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd \
+        cpio git python-docutils gettext automake autopoint texinfo build-essential \
+        pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev wget
 
-    - name: Clone Source
+    - name: Clone source
       run: |
-        git clone --depth=1 https://github.com/uwjtg/rt-n56u.git /opt/rt-n56u
-        cd /opt/rt-n56u/toolchain-mipsel
+        git clone --depth=1 https://github.com/uwjtg/rt-n56u.git $GITHUB_WORKSPACE/rt-n56u
+        cd $GITHUB_WORKSPACE/rt-n56u/toolchain-mipsel
         chmod +x dl_toolchain.sh
         ./dl_toolchain.sh
 
-    - name: Build Firmware
+    - name: Build firmware
       env:
-        TNAME: WR1200JS  # 修改为您的设备型号
+        TNAME: ${{ github.event.inputs.device || 'PSG1218' }}  # 默认编译K2P
       run: |
-        cd /opt/rt-n56u/trunk
-        sudo make clean  # 清理旧编译缓存
-        # 设置Storage分区为3MB
-        sed -i 's/CONFIG_MTD_STORE_PART_SIZ=0x00080000/CONFIG_MTD_STORE_PART_SIZ=0x00300000/g' configs/templates/$TNAME.config
-        # 启用FRPC插件
-        echo "CONFIG_FIRMWARE_INCLUDE_FRPC=y" >> configs/templates/$TNAME.config
+        cd $GITHUB_WORKSPACE/rt-n56u/trunk
+        cp -f configs/templates/$TNAME.config .config
         
-        sudo ./clear_tree
-        sudo ./build_firmware_modify $TNAME 0
-        sudo mkdir -p /opt/images
-        sudo cp -f images/*.trx /opt/images/ || exit 0
+        # 清理旧配置
+        sed -i '/CONFIG_FIRMWARE_INCLUDE_MENTOHUST/d' .config
+        sed -i '/CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT/d' .config
+        sed -i '/CONFIG_FIRMWARE_INCLUDE_FRPC/d' .config
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
+        # 添加新配置
+        echo "CONFIG_FIRMWARE_INCLUDE_FRPC=y" >> .config
+        echo "CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y" >> .config
+
+        ./clear_tree
+        ./build_firmware_modify $TNAME 0
+        mv -f images/*.trx $GITHUB_WORKSPACE/
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v2
       with:
-        name: Padavan-Firmware
-        path: /opt/images/
+        name: Padavan-${{ env.TNAME }}-固件
+        path: $GITHUB_WORKSPACE/*.trx
