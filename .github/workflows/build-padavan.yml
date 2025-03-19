@@ -1,136 +1,56 @@
-# 修改TNAME: WR1200JS 中的WR1200JS为你需要编译的型号，注意名称要与configs/templates/目录下的名字相同
-name: Build Padavan-3.4
-
-on: 
-  release:
-    types: [published]
-  push:
-    tags:
-    - 'v*'
-  workflow_dispatch:
-    inputs:
-      device:
-        description: '输入设备型号 (如 WR1200JS)'
-        required: true
+name: Build Padavan-MI-R4A
+on: [workflow_dispatch]
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-    env:
-      KERNEL: 3.4  # 固定内核版本
-    
+    runs-on: ubuntu-20.04
+    timeout-minutes: 90
+
     steps:
-    - name: 检出代码
-      uses: actions/checkout@v4
-
-    - name: 安装依赖
-      run: |
-        # 安装编译工具链
-        sudo apt-get update
-        sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot \
-        cpio git python3-docutils gettext automake autopoint texinfo build-essential help2man \
-        pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget
-
     - name: 克隆源码
+      uses: actions/checkout@v4
+      with:
+        repository: uwjtg/rt-n56u
+        submodules: recursive
+        path: rt-n56u
+
+    - name: 应用配置
       run: |
-        # 修改为你的仓库地址
-        sudo mkdir -p /opt
-        sudo chmod 777 /opt
-        git clone --depth=1 https://github.com/uwjtg/rt-n56u.git /opt/rt-n56u
+        cd rt-n56u/trunk
+        cp configs/templates/MI-R4A.config .config
         
-        # 准备工具链（3.4专用）
-        cd /opt/rt-n56u/toolchain-mipsel
-        chmod +x dl_toolchain.sh
-        ./dl_toolchain.sh
-        mkdir -p /opt/images
+        # 强制启用VNT插件
+        sed -i 's/^$$CONFIG_FIRMWARE_INCLUDE_VNTCLI=$$.*/\1y/' .config
+        sed -i 's/^$$CONFIG_FIRMWARE_INCLUDE_VNTS=$$.*/\1y/' .config
+        
+        # 硬件适配调整
+        sed -i 's/CONFIG_MTD_STORE_PART_SIZ=.*/CONFIG_MTD_STORE_PART_SIZ=0x200000/' .config  # 2MB存储空间
+        echo "CONFIG_FIRMWARE_WIFI2_DRIVER=3.0" >> .config  # MT7603稳定驱动
+
+    - name: 构建工具链
+      run: |
+        cd rt-n56u/toolchain-mipsel
+        ./clean_sources
+        ./build_toolchain_5.10
 
     - name: 编译固件
-      env:
-        TNAME: ${{ inputs.device || 'WR1200JS' }}
       run: |
-        # 初始化目录
-        mkdir -p /opt/rt-n56u /opt/images
-        chmod 755 /opt/rt-n56u /opt/images
+        cd rt-n56u/trunk
+        ../clear_tree
+        echo "开始编译，预计耗时30-50分钟..."
+        ../build_firmware | tee build.log
         
-        cd /opt/rt-n56u/trunk
-        
-        # 配置文件检查
-        if [ ! -f configs/templates/$TNAME.config ] ; then
-          echo "::error file=configs/templates/$TNAME.config::配置文件不存在"
-          exit 1
-        fi
-        
-        # 应用设备配置模板
-        cp -f configs/templates/$TNAME.config .config
-        
-        ########################################################################
-        # 功能配置清理区（保留原始注释）
-        ########################################################################
-        # 注意：必须先删除旧配置才能生效
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_MENTOHUST/d' .config #删除配置项MENTOHUST
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT/d' .config #删除配置项SCUTCLIENT
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS/d' .config #删除配置项SS plus+
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_SSSERVER/d' .config #删除配置项SS server
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER/d' .config #删除配置项DNSFORWARDER
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_ADBYBY/d' .config #删除配置项adbyby plus+
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_FRPC/d' .config #删除旧FRPC配置
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_FRPS/d' .config #删除旧FRPS配置
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_TUNSAFE/d' .config #删除配置项TUNSAFE
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_ALIDDNS/d' .config #删除配置项阿里DDNS
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_SMARTDNS/d' .config
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_SRELAY/d' .config
-        
-        # 强制启用OpenSSL工具
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' .config
-        
-        ########################################################################
-        # 3.4内核功能配置区（保留原始注释）
-        ########################################################################
-        echo "CONFIG_FIRMWARE_INCLUDE_MENTOHUST=n" >> .config #MENTOHUST
-        echo "CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT=n" >> .config #SCUTCLIENT
-        echo "CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=n" >> .config #SS plus+
-        echo "CONFIG_FIRMWARE_INCLUDE_SSOBFS=n" >> .config # simple-obfs混淆插件
-        echo "CONFIG_FIRMWARE_INCLUDE_SSSERVER=n" >> .config #SS server
-        echo "CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER=n" >> .config #DNSFORWARDER
-        echo "CONFIG_FIRMWARE_INCLUDE_ADBYBY=n" >> .config #adbyby plus+
-        echo "CONFIG_FIRMWARE_INCLUDE_FRPC=y" >> .config #内网穿透FRPC（已修复）
-        echo "CONFIG_FIRMWARE_INCLUDE_FRPS=n" >> .config #内网穿透FRPS
-        echo "CONFIG_FIRMWARE_INCLUDE_TUNSAFE=n" >> .config #TUNSAFE
-        echo "CONFIG_FIRMWARE_INCLUDE_ALIDDNS=n" >> .config #阿里DDNS
-        echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNS=n" >> .config #smartdns
-        echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNSBIN=n" >> .config #smartdns二进制文件
-        echo "CONFIG_FIRMWARE_INCLUDE_V2RAY=n" >> .config #v2ray执行文件
-        echo "CONFIG_FIRMWARE_INCLUDE_TROJAN=n" >> .config #trojan执行文件
-        echo "CONFIG_FIRMWARE_INCLUDE_KOOLPROXY=n" >> .config #KP广告过滤
-        echo "CONFIG_FIRMWARE_INCLUDE_CADDY=n" >> .config #在线文件管理
-        echo "CONFIG_FIRMWARE_INCLUDE_CADDYBIN=n" >> .config #caddy二进制
-        echo "CONFIG_FIRMWARE_INCLUDE_ADGUARDHOME=n" >> .config
-        echo "CONFIG_FIRMWARE_INCLUDE_SRELAY=n" >> .config 
-        echo "CONFIG_FIRMWARE_INCLUDE_WYY=n" >> .config #网易云解锁
-        echo "CONFIG_FIRMWARE_INCLUDE_WYYBIN=n" >> .config 
-        echo "CONFIG_FIRMWARE_INCLUDE_ZEROTIER=n" >> .config
-        
-        # 新增菜单显示配置（关键修复）
-        echo "CONFIG_FIRMWARE_ADVANCED=y" >> .config       # 启用高级菜单
-        echo "CONFIG_FIRMWARE_INCLUDE_WEBUI_ADV=y" >> .config # 显示WEB高级界面
-        
-        ########################################################################
-        # 编译执行区
-        ########################################################################
-        ./clear_tree
-        fakeroot ./build_firmware_modify $TNAME 0
-        
-        # 处理编译产物
-        if [ -n "$(ls -A images/*.trx 2>/dev/null)" ]; then
-          mv -v images/*.trx /opt/images/
-        else
-          echo "::error ::编译失败，未生成固件文件"
+        # 体积验证
+        FIRMWARE_SIZE=$(du -b images/*.trx | cut -f1)
+        if [ $FIRMWARE_SIZE -gt 15728640 ]; then  # 15MB限制
+          echo "::error::固件体积超过15MB，当前大小：$(($FIRMWARE_SIZE/1024/1024))MB"
           exit 1
         fi
 
-    - name: 上传固件
+    - name: 发布固件
       uses: actions/upload-artifact@v4
       with:
-        name: Padavan-${{ inputs.device }}-3.4
-        path: /opt/images
-        retention-days: 3
+        name: MI-R4A-VNT-Firmware
+        path: |
+          rt-n56u/trunk/images/*.trx
+          rt-n56u/trunk/build.log
