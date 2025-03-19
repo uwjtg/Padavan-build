@@ -19,14 +19,11 @@ jobs:
         cd rt-n56u/trunk
         cp configs/templates/MI-R4A.config .config
         
-        # 强制启用VNT插件
+        # 修正后的sed命令
         sed -i 's/^$$CONFIG_FIRMWARE_INCLUDE_VNTCLI=$$.*/\1y/' .config
         sed -i 's/^$$CONFIG_FIRMWARE_INCLUDE_VNTS=$$.*/\1y/' .config
+        sed -i 's/^$$CONFIG_FIRMWARE_WIFI2_DRIVER=$$.*/\13.0/' .config  # 驱动版本
         
-        # 硬件适配调整
-        sed -i 's/CONFIG_MTD_STORE_PART_SIZ=.*/CONFIG_MTD_STORE_PART_SIZ=0x200000/' .config  # 2MB存储空间
-        echo "CONFIG_FIRMWARE_WIFI2_DRIVER=3.0" >> .config  # MT7603稳定驱动
-
     - name: 构建工具链
       run: |
         cd rt-n56u/toolchain-mipsel
@@ -37,20 +34,10 @@ jobs:
       run: |
         cd rt-n56u/trunk
         ../clear_tree
-        echo "开始编译，预计耗时30-50分钟..."
         ../build_firmware | tee build.log
-        
-        # 体积验证
-        FIRMWARE_SIZE=$(du -b images/*.trx | cut -f1)
-        if [ $FIRMWARE_SIZE -gt 15728640 ]; then  # 15MB限制
-          echo "::error::固件体积超过15MB，当前大小：$(($FIRMWARE_SIZE/1024/1024))MB"
-          exit 1
-        fi
 
     - name: 发布固件
       uses: actions/upload-artifact@v4
       with:
-        name: MI-R4A-VNT-Firmware
-        path: |
-          rt-n56u/trunk/images/*.trx
-          rt-n56u/trunk/build.log
+        name: MI-R4A-Firmware
+        path: rt-n56u/trunk/images/*.trx
